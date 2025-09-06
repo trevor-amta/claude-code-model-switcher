@@ -2,7 +2,7 @@
   "name": "claude-code-model-switcher",
   "displayName": "Claude Code Model Switcher",
   "description": "Switch between Anthropic Claude models and Z.ai GLM models in Claude Code",
-  "version": "0.9.1",
+  "version": "0.9.3",
   "publisher": "trevor-amta",
   "author": {
     "name": "Trevor Spencer",
@@ -77,6 +77,16 @@
       {
         "command": "claudeModelSwitcher.configureModels",
         "title": "Claude: Configure Available Models",
+        "category": "Claude"
+      },
+      {
+        "command": "claudeModelSwitcher.setupEnvironment",
+        "title": "Claude: Setup Environment Variables",
+        "category": "Claude"
+      },
+      {
+        "command": "claudeModelSwitcher.runMigration",
+        "title": "Claude: Run Z.ai Migration Wizard",
         "category": "Claude"
       }
     ],

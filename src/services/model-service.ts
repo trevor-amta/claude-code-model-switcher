@@ -4,6 +4,7 @@ import { ClaudeCodeConfig } from '../types/claude-settings';
 import { Logger } from '../utils/logger';
 import { ConfigService } from './config-service';
 import { ClaudeService } from './claude-service';
+import { PROVIDER_METADATA } from '../types/provider-config';
 
 export class ModelService {
   private static instance: ModelService;
@@ -354,29 +355,21 @@ export class ModelService {
       return true;
     }
 
-    // Special handling for z.ai - they use environment variables instead of stored keys
-    if (model.provider === 'z-ai') {
-      // Check if ANTHROPIC_AUTH_TOKEN environment variable is set (z.ai's approach)
-      const envToken = process.env.ANTHROPIC_AUTH_TOKEN;
-      if (envToken) {
-        return true;
-      }
-      // Fall back to checking stored API key
-      const apiKeys = await this.configService.getApiKeys();
-      return !!(apiKeys && apiKeys.zai);
-    }
-
-    const apiKeys = await this.configService.getApiKeys();
-    if (!apiKeys) {
+    const provider = PROVIDER_METADATA[model.provider];
+    if (!provider) {
+      this.logger.warn(`Unknown provider: ${model.provider}`);
       return false;
     }
 
-    switch (model.provider) {
-      case 'anthropic':
-        return !!apiKeys.anthropic;
-      default:
-        return !!(apiKeys.custom && apiKeys.custom[model.provider]);
+    // Use configuration strategy based on provider
+    const strategy = this.configService.getConfigurationStrategy(model.provider);
+    if (!strategy) {
+      this.logger.warn(`No configuration strategy found for provider: ${model.provider}`);
+      return false;
     }
+
+    const status = await strategy.getConfigurationStatus();
+    return status.isConfigured;
   }
 
   private async getApiKeyForModel(model: ModelConfig): Promise<string | null> {
@@ -384,29 +377,21 @@ export class ModelService {
       return null;
     }
 
-    // Special handling for z.ai - they use environment variables instead of stored keys
-    if (model.provider === 'z-ai') {
-      // Check if ANTHROPIC_AUTH_TOKEN environment variable is set (z.ai's approach)
-      const envToken = process.env.ANTHROPIC_AUTH_TOKEN;
-      if (envToken) {
-        return envToken;
-      }
-      // Fall back to checking stored API key
-      const apiKeys = await this.configService.getApiKeys();
-      return apiKeys?.zai || null;
-    }
-
-    const apiKeys = await this.configService.getApiKeys();
-    if (!apiKeys) {
+    const provider = PROVIDER_METADATA[model.provider];
+    if (!provider) {
+      this.logger.warn(`Unknown provider: ${model.provider}`);
       return null;
     }
 
-    switch (model.provider) {
-      case 'anthropic':
-        return apiKeys.anthropic || null;
-      default:
-        return apiKeys.custom?.[model.provider] || null;
+    // Use configuration strategy based on provider
+    const strategy = this.configService.getConfigurationStrategy(model.provider);
+    if (!strategy) {
+      this.logger.warn(`No configuration strategy found for provider: ${model.provider}`);
+      return null;
     }
+
+    const apiKey = await strategy.getApiKey(model.provider);
+    return apiKey || null;
   }
 
   private shouldReloadWindow(previousModel: string | null, newModel: string): boolean {

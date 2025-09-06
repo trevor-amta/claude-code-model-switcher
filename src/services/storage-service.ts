@@ -47,6 +47,10 @@ export class StorageService {
     return StorageService.instance;
   }
 
+  public getContext(): vscode.ExtensionContext {
+    return this.context;
+  }
+
   public async storeApiKeys(apiKeys: ApiKeyConfig, options: StorageOptions = {}): Promise<void> {
     try {
       const encrypted = options.encrypted !== false;

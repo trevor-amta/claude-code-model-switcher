@@ -2,15 +2,18 @@ import * as vscode from 'vscode';
 import { ConfigService } from '../services/config-service';
 import { StorageService } from '../services/storage-service';
 import { NotificationService } from '../services/notification-service';
+import { EnvironmentService } from '../services/environment-service';
 import { ApiKeyConfig } from '../types/claude-settings';
 import { Logger } from '../utils/logger';
 import { SecurityUtils } from '../utils/security-utils';
+import { getProviderMetadata, StorageMethod } from '../types/provider-config';
 
 interface ApiKeyProvider {
   key: keyof ApiKeyConfig;
   name: string;
   description: string;
   validation?: (key: string) => string | null;
+  storageMethod?: StorageMethod;
 }
 
 export class ConfigureApiKeysCommand {
@@ -32,18 +35,20 @@ export class ConfigureApiKeysCommand {
           return 'Anthropic API key appears to be too short';
         }
         return null;
-      }
+      },
+      storageMethod: StorageMethod.VS_CODE_SETTINGS
     },
     {
       key: 'zai',
       name: 'Z.ai',
-      description: 'API key for GLM models via Z.ai API',
+      description: 'API key for GLM models via Z.ai API (requires environment variables)',
       validation: (key: string) => {
         if (key.length < 10) {
           return 'Z.ai API key appears to be too short';
         }
         return null;
-      }
+      },
+      storageMethod: StorageMethod.ENVIRONMENT_VARIABLES
     }
   ];
 
@@ -137,12 +142,20 @@ export class ConfigureApiKeysCommand {
       const action = await this.showProviderAction(provider, hasKey);
 
       if (action === 'set') {
-        const newKey = await this.promptForApiKey(provider);
-        if (newKey) {
-          currentKeys[provider.key] = newKey as any;
+        if (provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES) {
+          await this.setupEnvironmentVariables(provider);
+        } else {
+          const newKey = await this.promptForApiKey(provider);
+          if (newKey) {
+            currentKeys[provider.key] = newKey as any;
+          }
         }
       } else if (action === 'remove' && hasKey) {
-        delete currentKeys[provider.key];
+        if (provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES) {
+          await this.clearEnvironmentVariables(provider);
+        } else {
+          delete currentKeys[provider.key];
+        }
         await this.notificationService.showInfo(`Removed ${provider.name} API key`);
       }
     }
@@ -156,7 +169,7 @@ export class ConfigureApiKeysCommand {
     const items = [
       {
         label: hasKey ? '$(edit) Update Key' : '$(add) Set Key',
-        description: `${hasKey ? 'Update' : 'Add'} API key for ${provider.name}`,
+        description: `${hasKey ? 'Update' : 'Add'} ${provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES ? 'Environment Variables' : 'API key'} for ${provider.name}`,
         value: 'set'
       }
     ];
@@ -164,8 +177,16 @@ export class ConfigureApiKeysCommand {
     if (hasKey) {
       items.push({
         label: '$(trash) Remove Key',
-        description: `Remove ${provider.name} API key`,
+        description: `Remove ${provider.name} ${provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES ? 'Environment Variables' : 'API key'}`,
         value: 'remove'
+      });
+    }
+
+    if (provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES) {
+      items.push({
+        label: '$(check) Verify Setup',
+        description: `Check if ${provider.name} environment variables are properly configured`,
+        value: 'verify'
       });
     }
 
@@ -176,9 +197,14 @@ export class ConfigureApiKeysCommand {
     });
 
     const selection = await vscode.window.showQuickPick(items, {
-      placeHolder: `Configure ${provider.name} API key`,
+      placeHolder: `Configure ${provider.name} ${provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES ? 'Environment Variables' : 'API key'}`,
       ignoreFocusOut: true
     });
+
+    if (selection?.value === 'verify') {
+      await this.verifyEnvironmentSetup(provider);
+      return 'skip';
+    }
 
     return selection?.value;
   }
@@ -272,8 +298,8 @@ export class ConfigureApiKeysCommand {
       if (key) {
         items.push({
           label: `$(key) ${provider.name}`,
-          description: this.maskApiKey(key),
-          detail: provider.description
+          description: provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES ? 'Environment Variables' : this.maskApiKey(key),
+          detail: provider.description + (provider.storageMethod === StorageMethod.ENVIRONMENT_VARIABLES ? ' (Environment Variables)' : '')
         });
       }
     }
@@ -371,6 +397,149 @@ export class ConfigureApiKeysCommand {
     const middle = '*'.repeat(Math.min(key.length - 8, 20));
     
     return `${start}${middle}${end}`;
+  }
+
+  private async setupEnvironmentVariables(provider: ApiKeyProvider): Promise<void> {
+    let environmentService: EnvironmentService;
+    try {
+      environmentService = EnvironmentService.getInstance(this.storageService.getContext());
+    } catch (error) {
+      await this.notificationService.showError(
+        'Environment service not available. Please restart VS Code and try again.',
+        { detail: error instanceof Error ? error.message : 'Unknown error' }
+      );
+      return;
+    }
+
+    const providerMetadata = getProviderMetadata(provider.key as string);
+
+    if (!providerMetadata) {
+      await this.notificationService.showError(`Unknown provider: ${provider.name}`);
+      return;
+    }
+
+    const apiKey = await vscode.window.showInputBox({
+      prompt: `Enter ${provider.name} API key`,
+      password: true,
+      placeHolder: 'Enter your API key',
+      validateInput: (value) => {
+        if (!value || value.trim().length === 0) {
+          return 'API key cannot be empty';
+        }
+        return provider.validation ? provider.validation(value.trim()) : null;
+      },
+      ignoreFocusOut: true
+    });
+
+    if (!apiKey) {
+      return;
+    }
+
+    const baseUrl = await vscode.window.showInputBox({
+      prompt: `Enter ${provider.name} Base URL`,
+      placeHolder: 'https://api.z.ai/v1',
+      validateInput: (value) => {
+        if (!value || value.trim().length === 0) {
+          return 'Base URL cannot be empty';
+        }
+        try {
+          new URL(value.trim());
+          return null;
+        } catch {
+          return 'Please enter a valid URL';
+        }
+      },
+      ignoreFocusOut: true
+    });
+
+    if (!baseUrl) {
+      return;
+    }
+
+    const success = await environmentService.setupZaiEnvironment(apiKey.trim(), baseUrl.trim());
+    
+    if (success) {
+      const restart = await vscode.window.showInformationMessage(
+        `${provider.name} environment variables configured successfully. VS Code needs to restart for changes to take effect.`,
+        { modal: true },
+        'Restart Now',
+        'Restart Later'
+      );
+
+      if (restart === 'Restart Now') {
+        vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    } else {
+      await this.notificationService.showError(`Failed to set up ${provider.name} environment variables`);
+    }
+  }
+
+  private async clearEnvironmentVariables(provider: ApiKeyProvider): Promise<void> {
+    let environmentService: EnvironmentService;
+    try {
+      environmentService = EnvironmentService.getInstance(this.storageService.getContext());
+    } catch (error) {
+      await this.notificationService.showError(
+        'Environment service not available. Please restart VS Code and try again.',
+        { detail: error instanceof Error ? error.message : 'Unknown error' }
+      );
+      return;
+    }
+
+    const success = await environmentService.clearZaiEnvironment();
+
+    if (success) {
+      await this.notificationService.showInfo(`${provider.name} environment variables cleared`);
+      
+      const restart = await vscode.window.showInformationMessage(
+        `${provider.name} environment variables cleared. VS Code needs to restart for changes to take effect.`,
+        { modal: true },
+        'Restart Now',
+        'Restart Later'
+      );
+
+      if (restart === 'Restart Now') {
+        vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    } else {
+      await this.notificationService.showError(`Failed to clear ${provider.name} environment variables`);
+    }
+  }
+
+  private async verifyEnvironmentSetup(provider: ApiKeyProvider): Promise<void> {
+    let environmentService: EnvironmentService;
+    try {
+      environmentService = EnvironmentService.getInstance(this.storageService.getContext());
+    } catch (error) {
+      await this.notificationService.showError(
+        'Environment service not available. Please restart VS Code and try again.',
+        { detail: error instanceof Error ? error.message : 'Unknown error' }
+      );
+      return;
+    }
+
+    const providerMetadata = getProviderMetadata(provider.key as string);
+
+    if (!providerMetadata) {
+      await this.notificationService.showError(`Unknown provider: ${provider.name}`);
+      return;
+    }
+
+    const status = await environmentService.getZaiEnvironmentStatus();
+
+    if (status.isConfigured) {
+      await this.notificationService.showInfo(
+        `${provider.name} environment variables are properly configured:\n\n` +
+        `• ANTHROPIC_AUTH_TOKEN: ${status.authToken ? '✅ Set' : '❌ Missing'}\n` +
+        `• ANTHROPIC_BASE_URL: ${status.baseUrl ? '✅ Set' : '❌ Missing'}\n` +
+        `• Platform: ${status.platform}\n` +
+        `• Shell: ${status.shell}`
+      );
+    } else {
+      await this.notificationService.showWarning(
+        `${provider.name} environment variables are not properly configured. Please set up the environment variables first.`
+      );
+    }
   }
 }
 

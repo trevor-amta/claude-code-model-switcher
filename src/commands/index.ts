@@ -3,6 +3,8 @@ import { switchModel } from './switch-model';
 import { showCurrentModel } from './show-current-model';
 import { configureApiKeys } from './configure-api-keys';
 import { configureModels } from './configure-models';
+import { setupEnvironment } from './setup-environment';
+import { runMigration } from './run-migration';
 import { Logger } from '../utils/logger';
 
 export interface CommandRegistration {
@@ -38,6 +40,14 @@ export class CommandManager {
       {
         command: 'claudeModelSwitcher.configureModels',
         callback: this.wrapCommand('configureModels', configureModels)
+      },
+      {
+        command: 'claudeModelSwitcher.setupEnvironment',
+        callback: this.wrapCommand('setupEnvironment', setupEnvironment)
+      },
+      {
+        command: 'claudeModelSwitcher.runMigration',
+        callback: this.wrapCommand('runMigration', runMigration)
       }
     );
 
@@ -132,5 +142,7 @@ export {
   switchModel,
   showCurrentModel,
   configureApiKeys,
-  configureModels
+  configureModels,
+  setupEnvironment,
+  runMigration
 };

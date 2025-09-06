@@ -16,6 +16,8 @@ export interface ApiKeyConfig {
   zai?: string;
   custom?: Record<string, string>;
   storageMethod?: 'workspace' | 'global' | 'keychain';
+  environmentVariables?: Record<string, string>;
+  storageStrategy?: 'vs-code-settings' | 'environment-variables' | 'hybrid';
 }
 
 export interface UserPreferences {

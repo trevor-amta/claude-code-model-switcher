@@ -7,14 +7,17 @@ import { Logger } from '../utils/logger';
 import { PathUtils } from '../utils/path-utils';
 import { PermissionUtils } from '../utils/permission-utils';
 import { SecurityUtils } from '../utils/security-utils';
+import { ConfigService } from './config-service';
 
 export class ClaudeService {
   private static instance: ClaudeService;
   private readonly logger: Logger;
+  private readonly configService: ConfigService;
   private claudeConfigPaths: string[] = [];
 
   private constructor() {
     this.logger = new Logger('ClaudeService');
+    this.configService = ConfigService.getInstance();
     this.initializeClaudeConfigPaths();
   }
 
@@ -169,17 +172,20 @@ export class ClaudeService {
         }
       };
 
-      // For GLM models, set the Z.AI endpoint
+      // For z.ai models, set the Z.AI endpoint and handle environment variables
       if (model.provider === 'z-ai') {
         updatedConfig.env!.ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic';
         
-        // Set the API key if available
-        const apiKey = await this.getApiKeyForProvider(model.provider);
-        if (apiKey) {
-          updatedConfig.env!.ANTHROPIC_AUTH_TOKEN = apiKey;
+        // Use configuration strategy to get API key
+        const strategy = this.configService.getConfigurationStrategy(model.provider);
+        if (strategy) {
+          const apiKey = await strategy.getApiKey(model.provider);
+          if (apiKey) {
+            updatedConfig.env!.ANTHROPIC_AUTH_TOKEN = apiKey;
+          }
         }
       } else {
-        // For Anthropic models, remove Z.AI specific settings
+        // For non-z.ai models, remove Z.AI specific settings
         delete updatedConfig.env!.ANTHROPIC_BASE_URL;
         delete updatedConfig.env!.ANTHROPIC_AUTH_TOKEN;
       }
@@ -188,10 +194,14 @@ export class ClaudeService {
       updatedConfig.modelId = model.name;
       updatedConfig.endpoint = model.endpoint;
 
-      if (model.type === 'api' && model.provider) {
-        const apiKey = await this.getApiKeyForProvider(model.provider);
-        if (apiKey) {
-          updatedConfig.apiKey = apiKey;
+      // Handle API key for non-z.ai models
+      if (model.type === 'api' && model.provider && model.provider !== 'z-ai') {
+        const strategy = this.configService.getConfigurationStrategy(model.provider);
+        if (strategy) {
+          const apiKey = await strategy.getApiKey(model.provider);
+          if (apiKey) {
+            updatedConfig.apiKey = apiKey;
+          }
         }
       }
 
@@ -369,34 +379,15 @@ export class ClaudeService {
 
   private async getApiKeyForProvider(provider: string): Promise<string | null> {
     try {
-      // Special handling for z.ai - they use environment variables instead of stored keys
-      if (provider === 'z-ai') {
-        // Check if ANTHROPIC_AUTH_TOKEN environment variable is set (z.ai's approach)
-        const envToken = process.env.ANTHROPIC_AUTH_TOKEN;
-        if (envToken) {
-          return envToken;
-        }
-        // Fall back to checking stored API key
-        const ConfigService = (await import('./config-service')).ConfigService;
-        const configService = ConfigService.getInstance();
-        const apiKeys = await configService.getApiKeys();
-        return apiKeys?.zai || null;
-      }
-
-      const ConfigService = (await import('./config-service')).ConfigService;
-      const configService = ConfigService.getInstance();
-      const apiKeys = await configService.getApiKeys();
-      
-      if (!apiKeys) {
+      // Use configuration strategy to get API key
+      const strategy = this.configService.getConfigurationStrategy(provider);
+      if (!strategy) {
+        this.logger.warn(`No configuration strategy found for provider: ${provider}`);
         return null;
       }
 
-      switch (provider) {
-        case 'anthropic':
-          return apiKeys.anthropic || null;
-        default:
-          return apiKeys.custom?.[provider] || null;
-      }
+      const apiKey = await strategy.getApiKey(provider);
+      return apiKey || null;
     } catch (error) {
       this.logger.error(`Failed to get API key for provider ${provider}`, error);
       return null;

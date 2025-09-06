@@ -16,6 +16,9 @@ export interface ModelConfig {
   capabilities?: ModelCapabilities;
   limits?: ModelLimits;
   metadata?: ModelMetadata;
+  storageStrategy?: 'vs-code-settings' | 'environment-variables' | 'hybrid';
+  requiresEnvironmentSetup?: boolean;
+  environmentVariables?: Record<string, string>;
 }
 
 export interface ModelCapabilities {
@@ -89,6 +92,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     endpoint: 'https://api.anthropic.com',
     type: 'web',
     provider: 'anthropic',
+    storageStrategy: 'vs-code-settings',
     capabilities: {
       maxTokens: 4096,
       supportsImages: true,
@@ -104,6 +108,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     endpoint: 'https://api.anthropic.com',
     type: 'web',
     provider: 'anthropic',
+    storageStrategy: 'vs-code-settings',
     capabilities: {
       maxTokens: 4096,
       supportsImages: true,
@@ -118,6 +123,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     endpoint: 'https://api.anthropic.com',
     type: 'web',
     provider: 'anthropic',
+    storageStrategy: 'vs-code-settings',
     capabilities: {
       maxTokens: 4096,
       supportsImages: true,
@@ -134,6 +140,12 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     endpoint: 'https://api.z.ai/api/anthropic',
     type: 'api',
     provider: 'z-ai',
+    storageStrategy: 'environment-variables',
+    requiresEnvironmentSetup: true,
+    environmentVariables: {
+      ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
+      ANTHROPIC_AUTH_TOKEN: ''
+    },
     capabilities: {
       maxTokens: 4096,
       contextWindow: 128000
@@ -149,6 +161,12 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     endpoint: 'https://api.z.ai/api/anthropic',
     type: 'api',
     provider: 'z-ai',
+    storageStrategy: 'environment-variables',
+    requiresEnvironmentSetup: true,
+    environmentVariables: {
+      ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic',
+      ANTHROPIC_AUTH_TOKEN: ''
+    },
     capabilities: {
       maxTokens: 4096,
       contextWindow: 128000

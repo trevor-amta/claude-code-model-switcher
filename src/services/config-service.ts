@@ -2,16 +2,34 @@ import * as vscode from 'vscode';
 import { ClaudeExtensionSettings, ConfigurationTarget, ApiKeyConfig, UserPreferences, NotificationSettings } from '../types/claude-settings';
 import { ModelConfig, DEFAULT_MODELS, ReloadBehavior } from '../types/model-config';
 import { Logger } from '../utils/logger';
-import { SecurityUtils } from '../utils/security-utils';
+import { ConfigurationStrategy } from './config-strategies/base-strategy';
+import { VSCodeSettingsStrategy } from './config-strategies/vscode-settings-strategy';
+import { EnvironmentVariablesStrategy } from './config-strategies/environment-strategy';
 
 export class ConfigService {
   private static instance: ConfigService;
   private readonly logger: Logger;
   private configuration: vscode.WorkspaceConfiguration;
+  private strategies!: Map<string, ConfigurationStrategy>;
+  private defaultStrategy!: ConfigurationStrategy;
 
   private constructor() {
     this.logger = new Logger('ConfigService');
     this.configuration = vscode.workspace.getConfiguration('claudeModelSwitcher');
+    this.initializeStrategies();
+  }
+
+  private initializeStrategies(): void {
+    this.strategies = new Map();
+    
+    // Initialize VS Code settings strategy (default)
+    const vscodeStrategy = new VSCodeSettingsStrategy(this.logger);
+    this.strategies.set('vs-code-settings', vscodeStrategy);
+    this.defaultStrategy = vscodeStrategy;
+    
+    // Initialize environment variables strategy
+    const envStrategy = new EnvironmentVariablesStrategy(this.logger);
+    this.strategies.set('environment-variables', envStrategy);
   }
 
   public static getInstance(): ConfigService {
@@ -19,6 +37,41 @@ export class ConfigService {
       ConfigService.instance = new ConfigService();
     }
     return ConfigService.instance;
+  }
+
+  /**
+   * Get the appropriate configuration strategy for a provider
+   */
+  public getConfigurationStrategy(provider: string, storageMethod?: string): ConfigurationStrategy {
+    if (storageMethod) {
+      const strategy = this.strategies.get(storageMethod);
+      if (strategy && strategy.supportsProvider(provider)) {
+        return strategy;
+      }
+    }
+
+    // Fallback to provider-specific strategy selection
+    if (provider.toLowerCase() === 'zai') {
+      const envStrategy = this.strategies.get('environment-variables');
+      if (envStrategy) return envStrategy;
+    }
+
+    // Default to VS Code settings strategy
+    return this.defaultStrategy;
+  }
+
+  /**
+   * Get all available configuration strategies
+   */
+  public getAvailableStrategies(): ConfigurationStrategy[] {
+    return Array.from(this.strategies.values());
+  }
+
+  /**
+   * Get strategy by storage method
+   */
+  public getStrategyByStorageMethod(storageMethod: string): ConfigurationStrategy | undefined {
+    return this.strategies.get(storageMethod);
   }
 
   public get<T>(key: string, defaultValue?: T): T {
@@ -147,11 +200,15 @@ export class ConfigService {
 
   public async getApiKeys(): Promise<ApiKeyConfig | undefined> {
     try {
-      const apiKeys = this.configuration.get<ApiKeyConfig>('apiKeys');
-      if (apiKeys) {
-        return await SecurityUtils.decryptApiKeys(apiKeys);
+      // Get API keys from all strategies and merge them
+      const allApiKeys: ApiKeyConfig = {};
+      
+      for (const strategy of this.strategies.values()) {
+        const strategyKeys = await strategy.getApiKeys();
+        Object.assign(allApiKeys, strategyKeys);
       }
-      return undefined;
+      
+      return Object.keys(allApiKeys).length > 0 ? allApiKeys : undefined;
     } catch (error) {
       this.logger.error('Failed to get API keys', error);
       return undefined;
@@ -160,13 +217,62 @@ export class ConfigService {
 
   public async setApiKeys(apiKeys: ApiKeyConfig, target: ConfigurationTarget = 'global'): Promise<void> {
     try {
-      const encryptedKeys = await SecurityUtils.encryptApiKeys(apiKeys);
-      const configTarget = this.getVSCodeConfigTarget(target);
-      await this.configuration.update('apiKeys', encryptedKeys, configTarget);
+      const promises: Promise<void>[] = [];
+      
+      // Distribute API keys to appropriate strategies
+      for (const [provider, apiKey] of Object.entries(apiKeys)) {
+        if (apiKey) {
+          const strategy = this.getConfigurationStrategy(provider);
+          promises.push(strategy.setApiKey(provider, apiKey, target));
+        }
+      }
+      
+      await Promise.all(promises);
       this.logger.info('API keys updated successfully');
     } catch (error) {
       this.logger.error('Failed to set API keys', error);
       throw new Error(`Failed to update API keys: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get API key for a specific provider using the appropriate strategy
+   */
+  public async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+    try {
+      const strategy = this.getConfigurationStrategy(provider);
+      return await strategy.getApiKey(provider);
+    } catch (error) {
+      this.logger.error(`Failed to get API key for provider: ${provider}`, error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Set API key for a specific provider using the appropriate strategy
+   */
+  public async setApiKeyForProvider(provider: string, apiKey: string, target: ConfigurationTarget = 'global'): Promise<void> {
+    try {
+      const strategy = this.getConfigurationStrategy(provider);
+      await strategy.setApiKey(provider, apiKey, target);
+      this.logger.info(`API key for provider ${provider} updated successfully`);
+    } catch (error) {
+      this.logger.error(`Failed to set API key for provider: ${provider}`, error);
+      throw new Error(`Failed to update API key for ${provider}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Remove API key for a specific provider using the appropriate strategy
+   */
+  public async removeApiKeyForProvider(provider: string, target: ConfigurationTarget = 'global'): Promise<void> {
+    try {
+      const strategy = this.getConfigurationStrategy(provider);
+      await strategy.removeApiKey(provider, target);
+      this.logger.info(`API key for provider ${provider} removed successfully`);
+    } catch (error) {
+      this.logger.error(`Failed to remove API key for provider: ${provider}`, error);
+      throw new Error(`Failed to remove API key for ${provider}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -311,11 +417,11 @@ export class ConfigService {
         issues.push('Invalid reload behavior setting');
       }
 
-      if (settings.apiKeys) {
-        try {
-          await SecurityUtils.decryptApiKeys(settings.apiKeys);
-        } catch (error) {
-          issues.push('API keys are corrupted or invalid');
+      // Validate all strategies
+      for (const strategy of this.strategies.values()) {
+        const strategyValidation = await strategy.validateConfiguration();
+        if (!strategyValidation.isValid) {
+          issues.push(...strategyValidation.issues.map(issue => `${strategy.getStorageMethod()}: ${issue}`));
         }
       }
 
@@ -327,6 +433,65 @@ export class ConfigService {
       isValid: issues.length === 0,
       issues
     };
+  }
+
+  /**
+   * Validate configuration for a specific provider
+   */
+  public async validateProviderConfiguration(provider: string): Promise<{ isValid: boolean; issues: string[] }> {
+    try {
+      const strategy = this.getConfigurationStrategy(provider);
+      return await strategy.validateConfiguration();
+    } catch (error) {
+      return {
+        isValid: false,
+        issues: [`Provider validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      };
+    }
+  }
+
+  /**
+   * Test configuration for a specific provider
+   */
+  public async testProviderConfiguration(provider: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const strategy = this.getConfigurationStrategy(provider);
+      return await strategy.testConfiguration();
+    } catch (error) {
+      return {
+        success: false,
+        message: `Provider test failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  /**
+   * Get configuration status for all strategies
+   */
+  public async getConfigurationStatus(): Promise<{
+    overallConfigured: boolean;
+    strategies: Record<string, {
+      isConfigured: boolean;
+      providerStatus: Record<string, { configured: boolean; lastTested?: number; message?: string }>;
+      description: string;
+    }>;
+  }> {
+    const strategies: Record<string, any> = {};
+    let overallConfigured = false;
+
+    for (const [storageMethod, strategy] of this.strategies.entries()) {
+      const status = await strategy.getConfigurationStatus();
+      strategies[storageMethod] = {
+        isConfigured: status.isConfigured,
+        providerStatus: status.providerStatus,
+        description: strategy.getConfigurationDescription()
+      };
+      if (status.isConfigured) {
+        overallConfigured = true;
+      }
+    }
+
+    return { overallConfigured, strategies };
   }
 
   public onConfigurationChange(callback: (event: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {
@@ -356,6 +521,15 @@ export class ConfigService {
   }
 
   public dispose(): void {
+    // Dispose all strategies
+    for (const strategy of this.strategies.values()) {
+      try {
+        strategy.dispose();
+      } catch (error) {
+        this.logger.error('Error disposing strategy', error);
+      }
+    }
+    this.strategies.clear();
     this.logger.info('ConfigService disposed');
   }
 }

@@ -58,6 +58,34 @@ export ANTHROPIC_AUTH_TOKEN=your_zai_api_key_here
 
 The extension automatically detects these environment variables for Z.ai models. If both environment variables and stored API keys are present, environment variables take precedence.
 
+#### Option 3: Z.ai Setup Wizard (Recommended for Z.ai users)
+For comprehensive Z.ai setup, use the dedicated environment setup command:
+
+```bash
+# Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+Claude: Setup Environment Variables
+```
+
+This provides:
+- Step-by-step environment variable configuration
+- Platform-specific setup instructions
+- Automatic validation and testing
+- VS Code restart guidance
+
+#### Option 4: Migration from Previous Configuration
+If you previously stored Z.ai API keys in VS Code settings, the extension will detect this and offer to migrate to environment variables:
+
+```bash
+# Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+Claude: Run Configuration Diagnostics
+```
+
+This will:
+- Detect existing Z.ai configurations
+- Offer migration to environment variables
+- Validate your setup
+- Provide recommendations for optimal configuration
+
 ### 2. Switch Models
 
 Use any of these methods to switch models:
@@ -75,6 +103,8 @@ Claude: Switch Model
 - `Claude: Show Current Model` - Display currently selected model
 - `Claude: Configure API Keys` - Set up your API credentials
 - `Claude: Configure Available Models` - Customize model configurations
+- `Claude: Setup Environment Variables` - Comprehensive environment variable setup for Z.ai
+- `Claude: Run Configuration Diagnostics` - Check configuration health and get recommendations
 
 ## Configuration
 
@@ -211,6 +241,24 @@ The extension follows a modular architecture with these key components:
   code  # Launch VS Code after setting environment variables
   ```
 - Check the extension uses the correct Z.ai endpoint: `https://api.z.ai/api/anthropic`
+- Run diagnostics to identify issues:
+  ```bash
+  # Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+  Claude: Run Configuration Diagnostics
+  ```
+- Use the Z.ai setup wizard for guided configuration:
+  ```bash
+  # Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+  Claude: Setup Environment Variables
+  ```
+
+**Migration issues from previous Z.ai configuration:**
+- The extension now uses environment variables for Z.ai instead of VS Code settings
+- Run diagnostics to migrate existing configurations:
+  ```bash
+  Claude: Run Configuration Diagnostics
+  ```
+- Follow the migration wizard to transfer settings to environment variables
 
 ### Debug Logging
 
@@ -229,7 +277,37 @@ View logs in VS Code Developer Tools:
 
 ## Changelog
 
-### Version 0.9.1 (Latest)
+### Version 0.9.3 (Latest)
+
+**Major Z.ai Integration Overhaul:**
+- **Complete Environment Variable Support**: Implemented proper environment variable management for Z.ai integration, replacing VS Code settings storage with the required `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` environment variables
+- **Migration System**: Added comprehensive migration wizard to automatically detect and migrate existing Z.ai configurations from VS Code settings to environment variables
+- **Strategy Pattern Architecture**: Refactored configuration system using strategy pattern to support different storage methods (VS Code settings, environment variables, hybrid)
+- **Enhanced Provider Support**: Improved provider-specific configuration handling with automatic strategy selection based on provider requirements
+
+**New Commands:**
+- **Claude: Setup Environment Variables**: Comprehensive environment variable setup wizard with platform-specific instructions
+- **Claude: Run Z.ai Migration Wizard**: Dedicated command for migrating existing Z.ai configurations
+- **Claude: Run Configuration Diagnostics**: Enhanced diagnostics with provider-specific validation and quick fix actions
+
+**Enhanced User Experience:**
+- **Status Bar Improvements**: Added configuration method indicators (Env/Hybrid) and validation status icons
+- **Platform-Specific Setup**: Detailed setup instructions for macOS, Linux, and Windows with multiple configuration methods
+- **Guided Wizards**: Step-by-step setup wizards for both new installations and migrations
+- **Enhanced Validation**: Comprehensive configuration validation with actionable error messages
+
+**Technical Architecture:**
+- **Environment Service**: New service for cross-platform environment variable management
+- **Configuration Strategies**: Abstracted configuration storage methods with provider-specific implementations
+- **Migration Service**: Backend service for handling configuration migration and validation
+- **Enhanced Error Handling**: Improved error handling with detailed logging and user feedback
+
+**Documentation:**
+- **Comprehensive Documentation**: Added detailed guides for Z.ai integration, environment variables, and troubleshooting
+- **Platform-Specific Guides**: Step-by-step instructions for different operating systems and shell configurations
+- **Migration Documentation**: Complete guide for migrating existing configurations
+
+### Version 0.9.2
 
 **Bug Fixes:**
 - **Fixed GLM model switching issue**: Updated extension to write Claude configuration to `~/.claude/settings.json` instead of `config.json`, matching Claude Code's expected format

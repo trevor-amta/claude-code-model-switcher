@@ -4,6 +4,8 @@ import { StorageService } from './services/storage-service';
 import { ConfigService } from './services/config-service';
 import { ModelService } from './services/model-service';
 import { NotificationService } from './services/notification-service';
+import { MigrationService } from './services/migration-service';
+import { MigrationWizard } from './wizards/migration-wizard';
 import { Logger } from './utils/logger';
 import { ErrorHandler } from './utils/error-handler';
 
@@ -33,6 +35,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         
         // Initialize UI state
         await updateStatusBar();
+        
+        // Check for migration needs
+        await checkMigrationNeeds(context);
         
         logger.info('Claude Model Switcher extension activated successfully');
         
@@ -197,10 +202,46 @@ async function updateStatusBar(): Promise<void> {
         const currentModel = await modelService.getCurrentModel();
         
         if (currentModel) {
-            statusBarItem.text = `$(robot) ${currentModel}`;
-            statusBarItem.tooltip = `Current Claude Model: ${currentModel} - Click to switch`;
+            const model = await modelService.getModelByName(currentModel);
+            if (model) {
+                // Get configuration status
+                const validationResult = await modelService.validateModel(currentModel, {
+                    checkApiKey: true,
+                    checkEndpoint: true,
+                    testConnection: false
+                });
+                
+                // Determine status icon based on validation
+                let statusIcon = '$(robot)';
+                let statusText = '';
+                
+                if (validationResult.isValid) {
+                    statusIcon = '$(check)';
+                    statusText = '✓';
+                } else if (validationResult.issues.length > 0) {
+                    statusIcon = '$(error)';
+                    statusText = '⚠';
+                } else if (validationResult.warnings.length > 0) {
+                    statusIcon = '$(warning)';
+                    statusText = '!';
+                }
+                
+                // Show configuration method for environment variable providers
+                let configMethod = '';
+                if (model.storageStrategy === 'environment-variables') {
+                    configMethod = ' (Env)';
+                } else if (model.storageStrategy === 'hybrid') {
+                    configMethod = ' (Hybrid)';
+                }
+                
+                statusBarItem.text = `${statusIcon} ${currentModel}${configMethod} ${statusText}`;
+                statusBarItem.tooltip = `Current Claude Model: ${model.displayName}\nProvider: ${model.provider}\nConfiguration: ${model.storageStrategy}\nStatus: ${validationResult.isValid ? 'Valid' : 'Issues Found'}\n\nClick to switch models`;
+            } else {
+                statusBarItem.text = '$(robot) Claude (Unknown)';
+                statusBarItem.tooltip = 'Current model not found in configuration - Click to choose a model';
+            }
         } else {
-            statusBarItem.text = `$(robot) Claude`;
+            statusBarItem.text = '$(robot) Claude';
             statusBarItem.tooltip = 'No model selected - Click to choose a model';
         }
         
@@ -208,10 +249,72 @@ async function updateStatusBar(): Promise<void> {
         
     } catch (error) {
         logger.error('Failed to update status bar', error);
-        statusBarItem.text = `$(robot) Claude (Error)`;
+        statusBarItem.text = '$(robot) Claude (Error)';
         statusBarItem.tooltip = 'Error loading model information - Click to retry';
     }
 }
 
+/**
+ * Check if migration is needed and prompt user
+ */
+async function checkMigrationNeeds(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        logger.info('Checking for migration needs');
+        
+        const migrationService = new MigrationService(context);
+        const migrationStatus = await migrationService.getMigrationStatus();
+        
+        if (migrationStatus.migrationNeeded) {
+            logger.info('Migration needed, prompting user');
+            
+            const notificationService = NotificationService.getInstance();
+            
+            // Show migration notification
+            const result = await notificationService.showWarning(
+                'Z.ai Configuration Migration Required',
+                { actions: ['Migrate Now', 'Learn More'] }
+            );
+            
+            if (result === 'Migrate Now') {
+                // Start migration wizard
+                const migrationWizard = new MigrationWizard(context);
+                await migrationWizard.start();
+            } else if (result === 'Learn More') {
+                // Show information about migration
+                await showMigrationInformation();
+            }
+            
+        } else if (migrationStatus.migrationCompleted) {
+            logger.info('Migration already completed');
+        } else {
+            logger.info('No migration needed');
+        }
+        
+    } catch (error) {
+        logger.error('Failed to check migration needs', error);
+        // Don't throw error here as it's not critical for extension activation
+    }
+}
+
+/**
+ * Show migration information to user
+ */
+async function showMigrationInformation(): Promise<void> {
+    const message = `Z.ai Configuration Migration
+
+The Claude Code Model Switcher has been updated to use environment variables for Z.ai integration instead of VS Code settings.
+
+This change is required for proper Z.ai integration and follows Z.ai's official configuration method.
+
+To migrate your existing Z.ai configuration:
+1. Run "Claude: Setup Environment Variables" command
+2. Follow the migration wizard steps
+3. Your existing API key will be automatically detected
+
+For more information, see the Z.ai Integration Guide in the documentation.`;
+
+    await vscode.window.showInformationMessage(message, { modal: true }, 'OK');
+}
+
 // Export for testing
-export { updateStatusBar };
+export { updateStatusBar, checkMigrationNeeds, showMigrationInformation };
