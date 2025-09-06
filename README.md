@@ -227,6 +227,27 @@ View logs in VS Code Developer Tools:
 2. Go to Console tab
 3. Look for messages prefixed with `[Claude Model Switcher]`
 
+## Changelog
+
+### Version 0.9.1 (Latest)
+
+**Bug Fixes:**
+- **Fixed GLM model switching issue**: Updated extension to write Claude configuration to `~/.claude/settings.json` instead of `config.json`, matching Claude Code's expected format
+- **Improved Z.ai compatibility**: Enhanced environment variable handling for `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`
+- **Better configuration format**: Added proper `env` object structure in settings file to match Claude Code requirements
+
+**Technical Improvements:**
+- Updated `ClaudeService` to use correct settings file paths
+- Enhanced model configuration with proper provider field mapping
+- Improved error handling and logging for configuration issues
+
+### Version 0.9.0
+
+- Initial release with basic model switching functionality
+- Support for Anthropic Claude and Z.ai GLM models
+- API key management and secure storage
+- Status bar integration
+
 ## Contributing
 
 Contributions are welcome! Please:

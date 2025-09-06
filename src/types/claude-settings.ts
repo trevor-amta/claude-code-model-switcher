@@ -69,6 +69,13 @@ export interface ValidationOptions {
 }
 
 export interface ClaudeCodeConfig {
+  env?: {
+    ANTHROPIC_MODEL?: string;
+    ANTHROPIC_BASE_URL?: string;
+    ANTHROPIC_AUTH_TOKEN?: string;
+    [key: string]: string | undefined;
+  };
+  // Legacy fields for backward compatibility
   modelId?: string;
   endpoint?: string;
   apiKey?: string;

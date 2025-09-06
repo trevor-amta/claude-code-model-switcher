@@ -31,34 +31,34 @@ export class ClaudeService {
       const platform = process.platform;
 
       const commonPaths: string[] = [
-        path.join(homedir, '.claude', 'config.json'),
-        path.join(homedir, '.config', 'claude', 'config.json')
+        path.join(homedir, '.claude', 'settings.json'),
+        path.join(homedir, '.config', 'claude', 'settings.json')
       ];
 
       if (platform === 'darwin') {
         commonPaths.push(
-          path.join(homedir, 'Library', 'Application Support', 'Claude', 'config.json'),
-          path.join(homedir, 'Library', 'Preferences', 'claude-config.json')
+          path.join(homedir, 'Library', 'Application Support', 'Claude', 'settings.json'),
+          path.join(homedir, 'Library', 'Preferences', 'claude-settings.json')
         );
       } else if (platform === 'win32') {
         const appData = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
         commonPaths.push(
-          path.join(appData, 'Claude', 'config.json'),
-          path.join(appData, 'claude-config.json')
+          path.join(appData, 'Claude', 'settings.json'),
+          path.join(appData, 'claude-settings.json')
         );
       } else {
         commonPaths.push(
-          path.join(homedir, '.local', 'share', 'claude', 'config.json'),
-          path.join(homedir, '.claude-config.json')
+          path.join(homedir, '.local', 'share', 'claude', 'settings.json'),
+          path.join(homedir, '.claude-settings.json')
         );
       }
 
       if (vscode.workspace.workspaceFolders) {
         for (const folder of vscode.workspace.workspaceFolders) {
           commonPaths.push(
-            path.join(folder.uri.fsPath, '.claude', 'config.json'),
-            path.join(folder.uri.fsPath, '.vscode', 'claude-config.json'),
-            path.join(folder.uri.fsPath, 'claude-config.json')
+            path.join(folder.uri.fsPath, '.claude', 'settings.json'),
+            path.join(folder.uri.fsPath, '.vscode', 'claude-settings.json'),
+            path.join(folder.uri.fsPath, 'claude-settings.json')
           );
         }
       }
@@ -160,11 +160,33 @@ export class ClaudeService {
     try {
       const currentConfig = await this.readClaudeConfig(configPath) || {};
       
+      // Initialize env object if it doesn't exist
       const updatedConfig: ClaudeCodeConfig = {
         ...currentConfig,
-        modelId: model.name,
-        endpoint: model.endpoint
+        env: {
+          ...currentConfig.env,
+          ANTHROPIC_MODEL: model.name
+        }
       };
+
+      // For GLM models, set the Z.AI endpoint
+      if (model.provider === 'z-ai') {
+        updatedConfig.env!.ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic';
+        
+        // Set the API key if available
+        const apiKey = await this.getApiKeyForProvider(model.provider);
+        if (apiKey) {
+          updatedConfig.env!.ANTHROPIC_AUTH_TOKEN = apiKey;
+        }
+      } else {
+        // For Anthropic models, remove Z.AI specific settings
+        delete updatedConfig.env!.ANTHROPIC_BASE_URL;
+        delete updatedConfig.env!.ANTHROPIC_AUTH_TOKEN;
+      }
+
+      // Keep legacy fields for backward compatibility
+      updatedConfig.modelId = model.name;
+      updatedConfig.endpoint = model.endpoint;
 
       if (model.type === 'api' && model.provider) {
         const apiKey = await this.getApiKeyForProvider(model.provider);
@@ -183,7 +205,8 @@ export class ClaudeService {
   public async getCurrentModel(configPath?: string): Promise<string | null> {
     try {
       const config = await this.readClaudeConfig(configPath);
-      return config?.modelId || null;
+      // Prefer the new env format, fall back to legacy format
+      return config?.env?.ANTHROPIC_MODEL || config?.modelId || null;
     } catch (error) {
       this.logger.error('Failed to get current model from Claude config', error);
       return null;
@@ -382,7 +405,7 @@ export class ClaudeService {
 
   private getDefaultConfigPath(): string {
     const homedir = require('os').homedir();
-    return path.join(homedir, '.claude', 'config.json');
+    return path.join(homedir, '.claude', 'settings.json');
   }
 
   public async refreshConfigPaths(): Promise<void> {
