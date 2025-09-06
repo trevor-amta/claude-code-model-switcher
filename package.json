@@ -1,0 +1,171 @@
+{
+  "name": "claude-code-model-switcher",
+  "displayName": "Claude Code Model Switcher",
+  "description": "Switch between Anthropic Claude models and Z.ai GLM models in Claude Code",
+  "version": "0.9.0",
+  "publisher": "trevor-amta",
+  "author": {
+    "name": "Trevor Spencer",
+    "url": "https://github.com/trevor-amta"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trevor-amta/claude-code-model-switcher"
+  },
+  "bugs": {
+    "url": "https://github.com/trevor-amta/claude-code-model-switcher/issues"
+  },
+  "homepage": "https://github.com/trevor-amta/claude-code-model-switcher#readme",
+  "keywords": [
+    "claude",
+    "anthropic",
+    "ai",
+    "model-switcher",
+    "glm",
+    "z.ai",
+    "code-assistant"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "test": "node ./out/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "lint:fix": "eslint src --ext ts --fix",
+    "clean": "rimraf out",
+    "build": "npm run clean && npm run compile",
+    "package": "vsce package",
+    "package:pre": "vsce package --pre-release",
+    "publish": "vsce publish",
+    "publish:pre": "vsce publish --pre-release",
+    "dev": "npm run compile && code --extensionDevelopmentPath=. --new-window",
+    "debug": "npm run compile && code --extensionDevelopmentPath=. --disable-extensions"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeModelSwitcher.switchModel",
+        "title": "Claude: Switch Model",
+        "category": "Claude"
+      },
+      {
+        "command": "claudeModelSwitcher.showCurrentModel",
+        "title": "Claude: Show Current Model",
+        "category": "Claude"
+      },
+      {
+        "command": "claudeModelSwitcher.configureApiKeys",
+        "title": "Claude: Configure API Keys",
+        "category": "Claude"
+      },
+      {
+        "command": "claudeModelSwitcher.configureModels",
+        "title": "Claude: Configure Available Models",
+        "category": "Claude"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Model Switcher",
+      "properties": {
+        "claudeModelSwitcher.defaultModel": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Default model to use"
+        },
+        "claudeModelSwitcher.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show current model in status bar"
+        },
+        "claudeModelSwitcher.reloadBehavior": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "auto",
+            "skip"
+          ],
+          "default": "prompt",
+          "description": "Window reload behavior after model switch"
+        },
+        "claudeModelSwitcher.debugMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging"
+        },
+        "claudeModelSwitcher.availableModels": {
+          "type": "array",
+          "default": [
+            {
+              "name": "claude-sonnet-4-20250514",
+              "displayName": "Claude Sonnet 4",
+              "description": "Latest Sonnet model for balanced performance",
+              "endpoint": "https://api.anthropic.com",
+              "type": "web"
+            },
+            {
+              "name": "claude-3-5-haiku-20241022",
+              "displayName": "Claude 3.5 Haiku",
+              "description": "Fast and compact model for quick tasks",
+              "endpoint": "https://api.anthropic.com",
+              "type": "web"
+            },
+            {
+              "name": "claude-opus-4-20250514",
+              "displayName": "Claude Opus 4",
+              "description": "Most capable model for complex tasks",
+              "endpoint": "https://api.anthropic.com",
+              "type": "web"
+            },
+            {
+              "name": "glm-4.5",
+              "displayName": "GLM-4.5",
+              "description": "Z.ai's powerful reasoning model (355B params)",
+              "endpoint": "https://api.z.ai/api/anthropic",
+              "type": "api"
+            },
+            {
+              "name": "glm-4.5-air",
+              "displayName": "GLM-4.5-Air",
+              "description": "Z.ai's lightweight model (cost-effective)",
+              "endpoint": "https://api.z.ai/api/anthropic",
+              "type": "api"
+            }
+          ],
+          "description": "Available models and their configurations"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.0.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.0.0",
+    "vsce": "^2.15.0"
+  }
+}
